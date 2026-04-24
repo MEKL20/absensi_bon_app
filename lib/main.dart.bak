@@ -1,0 +1,374 @@
+import 'dart:convert';
+import 'dart:io';
+import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:http/http.dart' as http;
+import 'package:flutter/services.dart';
+
+void main() => runApp(AbsensiApp());
+
+class AbsensiApp extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'Absensi & Bon Karyawan',
+      home: AbsensiPage(),
+      debugShowCheckedModeBanner: false,
+    );
+  }
+}
+
+class AbsensiPage extends StatefulWidget {
+  @override
+  _AbsensiPageState createState() => _AbsensiPageState();
+}
+
+class _AbsensiPageState extends State<AbsensiPage> {
+  final TextEditingController _namaController = TextEditingController();
+  final TextEditingController _bonController = TextEditingController();
+  final TextEditingController _ketController = TextEditingController();
+
+  File? _image;
+  final picker = ImagePicker();
+  bool _isLoading = false;
+
+  Future pickImage() async {
+    final pickedFile = await picker.pickImage(source: ImageSource.camera, imageQuality: 50);
+    if (pickedFile != null) {
+      setState(() {
+        _image = File(pickedFile.path);
+      });
+    }
+  }
+
+  Future<String?> uploadToImgBB(File imageFile) async {
+    final uri = Uri.parse('https://api.imgbb.com/1/upload?expiration=120&key=34e69bc080f2734a34afb73c91fcc605');
+
+    final bytes = await imageFile.readAsBytes();
+    final base64Image = base64Encode(bytes);
+
+    final response = await http.post(
+      uri,
+      body: {
+        'image': base64Image,
+        'name': 'absensi_${DateTime.now().millisecondsSinceEpoch}'
+      },
+    );
+
+    if (response.statusCode == 200) {
+      final jsonData = jsonDecode(response.body);
+      return jsonData['data']['url']; // Public URL to use in Google Apps Script
+    } else {
+      print('Upload failed: ${response.body}');
+      return null;
+    }
+  }
+
+
+  Future<void> kirimData({required bool isBon}) async {
+    if (_namaController.text.isEmpty || (isBon ? _bonController.text.isEmpty : _image == null)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Harap lengkapi semua field!')),
+      );
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
+    String tanggal = DateTime.now().toIso8601String().split('T')[0];
+    String jam = TimeOfDay.now().format(context);
+
+    try {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Mengirim data...')),
+      );
+
+      final uriImgbb = Uri.parse('https://api.imgbb.com/1/upload?expiration=120&key=34e69bc080f2734a34afb73c91fcc605');
+
+      var request = http.MultipartRequest('POST', uriImgbb)
+        ..files.add(await http.MultipartFile.fromPath('image', _image!.path));
+
+      final result = await request.send();
+      final respStr = await result.stream.bytesToString();
+      final responseJson = jsonDecode(respStr);
+
+      final url = 'https://script.google.com/macros/s/AKfycbw4i8ambyuwKoO-0DURhNRnmonekqguIU1QJBGugvAGs1C-0_vII1cKf5BaGBImYthC/exec';
+      Map<String, String> queryParams = {
+        'nama': _namaController.text,
+        'tanggal': tanggal,
+        'jam': jam,
+        'isBon': isBon.toString(),
+        'foto': responseJson['data']['display_url']
+      };
+      if (isBon) {
+        queryParams['jumlah'] = _bonController.text;
+        queryParams['keterangan'] = _ketController.text;
+      }
+
+      // Build URL with parameters
+      String queryString = queryParams.entries
+          .map((e) => '${Uri.encodeComponent(e.key)}=${Uri.encodeComponent(
+          e.value)}')
+          .join('&');
+
+      String finalUrl = '$url?$queryString';
+      print('Making GET request to: ${finalUrl}');
+      final response = await http.get(
+        Uri.parse(finalUrl),
+        headers: {
+          'Accept': 'text/plain',
+          'User-Agent': 'Flutter App',
+        },
+      ).timeout(Duration(seconds: 30));
+
+      print('Response status: ${response.statusCode}');
+      print('Response body: ${response.body}');
+
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+
+      // Check response
+      if (response.statusCode == 200) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(isBon
+                ? 'Bon berhasil dicatat!'
+                : 'Absensi berhasil dikirim!'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 3),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Gagal mengirim data: ${response.body}'),
+            backgroundColor: Colors.red,
+            duration: Duration(seconds: 5),
+          ),
+        );
+      }
+      setState(() => _image = null);
+      _bonController.clear();
+      _ketController.clear();
+    } catch (e) {
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      print('Error detail: $e');
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error: ${e.toString()}'),
+          backgroundColor: Colors.red,
+          duration: Duration(seconds: 5),
+        ),
+      );
+    }
+
+    setState(() => _isLoading = false);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _namaController.addListener(() => setState(() {}));
+    _bonController.addListener(() => setState(() {}));
+  }
+
+  @override
+  void dispose() {
+    _namaController.dispose();
+    _bonController.dispose();
+    _ketController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('Absensi & Bon Karyawan'),
+        backgroundColor: Colors.blue,
+        foregroundColor: Colors.white,
+      ),
+      body: _isLoading
+          ? Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(height: 16),
+            Text('Mengirim data...'),
+          ],
+        ),
+      )
+          : SingleChildScrollView(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          children: [
+            // === Input Nama ===
+            TextField(
+              controller: _namaController,
+              decoration: InputDecoration(
+                labelText: 'Nama Karyawan',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.person),
+              ),
+            ),
+            SizedBox(height: 16),
+
+            // === Foto Selfie (Shared) ===
+            Card(
+              elevation: 4,
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  children: [
+                    Text(
+                      'FOTO SELFIE',
+                      style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.indigo),
+                    ),
+                    SizedBox(height: 16),
+                    _image != null
+                        ? ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Image.file(
+                        _image!,
+                        height: 200,
+                        fit: BoxFit.cover,
+                      ),
+                    )
+                        : Container(
+                      height: 200,
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.grey),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.camera_alt,
+                                size: 50, color: Colors.grey),
+                            Text('Belum ada foto selfie'),
+                          ],
+                        ),
+                      ),
+                    ),
+                    SizedBox(height: 16),
+                    ElevatedButton.icon(
+                      onPressed: _isLoading ? null : pickImage,
+                      icon: Icon(Icons.camera_alt),
+                      label: Text('Ambil Foto Selfie'),
+                      style: ElevatedButton.styleFrom(
+                        minimumSize: Size(double.infinity, 45),
+                        backgroundColor: Colors.indigo,
+                        foregroundColor: Colors.white,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            SizedBox(height: 20),
+
+            // === Form Absensi ===
+            Card(
+              elevation: 4,
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  children: [
+                    Text(
+                      'ABSENSI',
+                      style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.green),
+                    ),
+                    SizedBox(height: 16),
+                    ElevatedButton(
+                      onPressed: (_image != null &&
+                          _namaController.text.isNotEmpty &&
+                          !_isLoading)
+                          ? () => kirimData(isBon: false)
+                          : null,
+                      child: Text('Kirim Absen'),
+                      style: ElevatedButton.styleFrom(
+                        minimumSize: Size(double.infinity, 45),
+                        backgroundColor: Colors.green,
+                        foregroundColor: Colors.white,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            SizedBox(height: 20),
+
+            // === Form Bon ===
+            Card(
+              elevation: 4,
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  children: [
+                    Text(
+                      'BON KARYAWAN',
+                      style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.orange),
+                    ),
+                    SizedBox(height: 16),
+                    TextField(
+                      controller: _bonController,
+                      decoration: InputDecoration(
+                        labelText: 'Jumlah Bon (Rp)',
+                        border: OutlineInputBorder(),
+                        prefixText: 'Rp ',
+                        prefixIcon: Icon(Icons.money),
+                      ),
+                      keyboardType: TextInputType.number,
+                      inputFormatters: [
+                        FilteringTextInputFormatter.digitsOnly,
+                      ],
+                    ),
+                    SizedBox(height: 16),
+                    TextField(
+                      controller: _ketController,
+                      decoration: InputDecoration(
+                        labelText: 'Keterangan (Opsional)',
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.description),
+                      ),
+                      maxLines: 3,
+                    ),
+                    SizedBox(height: 16),
+                    ElevatedButton(
+                      onPressed: (_image != null &&
+                          _namaController.text.isNotEmpty &&
+                          _bonController.text.isNotEmpty &&
+                          !_isLoading)
+                          ? () => kirimData(isBon: true)
+                          : null,
+                      child: Text('Catat Bon'),
+                      style: ElevatedButton.styleFrom(
+                        minimumSize: Size(double.infinity, 45),
+                        backgroundColor: Colors.orange,
+                        foregroundColor: Colors.white,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
