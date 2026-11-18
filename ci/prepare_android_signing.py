@@ -6,6 +6,9 @@ from pathlib import Path
 
 def main():
     required = ['ANDROID_KEYSTORE_BASE64', 'ANDROID_KEYSTORE_PASSWORD', 'ANDROID_KEY_ALIAS', 'ANDROID_KEY_PASSWORD', 'ANDROID_KEYSTORE_PATH']
+    application_id = os.environ.get('ANDROID_APPLICATION_ID', '')
+    if not all(part.isidentifier() and part.isascii() for part in application_id.split('.')) or len(application_id.split('.')) < 2 or application_id.startswith('com.example.'):
+        raise ValueError('ANDROID_APPLICATION_ID must be a production reverse-DNS identifier, not the sample com.example ID.')
     if any(not os.environ.get(name) for name in required):
         raise ValueError('Configure all four Android signing secrets before running signed builds.')
     target = Path(os.environ['ANDROID_KEYSTORE_PATH'])

@@ -24,8 +24,11 @@ class MobileBuildHelpersTest(unittest.TestCase):
             target = Path(directory) / 'android-upload.jks'
             environment = {'RUNNER_TEMP': directory, 'ANDROID_KEYSTORE_PATH': str(target),
                            'ANDROID_KEYSTORE_BASE64': base64.b64encode(b'test-keystore-bytes').decode(),
-                           'ANDROID_KEYSTORE_PASSWORD': 'test', 'ANDROID_KEY_ALIAS': 'test', 'ANDROID_KEY_PASSWORD': 'test'}
+                           'ANDROID_KEYSTORE_PASSWORD': 'test', 'ANDROID_KEY_ALIAS': 'test', 'ANDROID_KEY_PASSWORD': 'test', 'ANDROID_APPLICATION_ID': 'com.example.testapp'}
             with patch.dict(os.environ, environment, clear=True):
+                with self.assertRaises(ValueError):
+                    prepare_android()
+                os.environ['ANDROID_APPLICATION_ID'] = 'com.customer.absensi'
                 prepare_android()
                 self.assertEqual(target.read_bytes(), b'test-keystore-bytes')
                 os.environ['ANDROID_KEYSTORE_PATH'] = str(Path(directory) / 'wrong.jks')
