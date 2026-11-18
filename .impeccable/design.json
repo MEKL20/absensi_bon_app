@@ -1,0 +1,391 @@
+{
+  "version": 1,
+  "platform": {
+    "framework": "Flutter",
+    "targets": [
+      "Android",
+      "iOS"
+    ],
+    "delivery": "installed native mobile",
+    "theme": "Material 3, light only",
+    "units": "logical pixels",
+    "sources": [
+      "lib/main.dart",
+      "lib/ui.dart",
+      "lib/login_page.dart",
+      "lib/home_page.dart",
+      "lib/bon_page.dart",
+      "lib/absensi_page.dart",
+      "lib/employees_page.dart"
+    ],
+    "context": "Indonesian phone use during the working day, camera handoff and imperfect networks"
+  },
+  "colors": {
+    "ink": "#152C31",
+    "muted": "#51636A",
+    "primary": "#17634C",
+    "background": "#F5F8F7",
+    "border": "#D7E1DC",
+    "surface": "#FFFFFF",
+    "summarySupport": "#D8E8E2",
+    "avatarSurface": "#E5EFEA",
+    "statusWarning": "#81580A",
+    "statusNegative": "#A12D30",
+    "errorSurface": "#FFF0EF",
+    "errorText": "#8C292D",
+    "statusBackgroundAlpha": 0.09,
+    "generatedRoles": {
+      "method": "ColorScheme.fromSeed(seedColor: AppColors.primary, brightness: Brightness.light)",
+      "overrides": [
+        "primary",
+        "onPrimary",
+        "surface",
+        "onSurface"
+      ],
+      "navigationIndicator": "colorScheme.primaryContainer",
+      "tonalButton": "Material generated container/on-container roles",
+      "note": "Generated roles have no hand-authored hex token."
+    }
+  },
+  "spacing": {
+    "observedLogicalPixels": [
+      4,
+      6,
+      8,
+      10,
+      12,
+      14,
+      16,
+      18,
+      20,
+      24,
+      28,
+      32,
+      36,
+      40,
+      48
+    ],
+    "page": 20,
+    "loginInsets": {
+      "left": 24,
+      "top": 48,
+      "right": 24,
+      "bottom": 32
+    },
+    "domainInsets": {
+      "left": 20,
+      "top": 20,
+      "right": 20,
+      "bottom": 32
+    },
+    "fieldContent": {
+      "horizontal": 16,
+      "vertical": 16
+    },
+    "sectionHeading": {
+      "top": 24,
+      "bottom": 12
+    },
+    "formHistoryGap": 32,
+    "summaryPadding": 20,
+    "noticePadding": 16,
+    "bonRecordVertical": 18,
+    "statusBadge": {
+      "horizontal": 10,
+      "vertical": 5
+    },
+    "wrap": {
+      "spacing": [
+        8,
+        12
+      ],
+      "runSpacing": 8
+    }
+  },
+  "shape": {
+    "radii": {
+      "statusBadge": 8,
+      "fieldsButtonsNoticesReceiptsPhoto": 12,
+      "summaryAndSignInMark": 16
+    },
+    "dividerThickness": 1,
+    "avatar": "CircleAvatar",
+    "photoPreview": {
+      "aspectRatio": "4:3",
+      "fit": "BoxFit.contain"
+    },
+    "customShadows": [],
+    "appBarScrolledUnderElevation": 0,
+    "inheritedShapes": [
+      "Material NavigationBar indicator",
+      "ChoiceChip",
+      "AlertDialog"
+    ]
+  },
+  "typography": {
+    "family": "Flutter Material/platform default; no fontFamily override",
+    "customFonts": [],
+    "material3": true,
+    "icons": "Flutter Material Icons (uses-material-design: true)",
+    "roles": {
+      "signInTitle": {
+        "textTheme": "headlineLarge",
+        "weight": 700
+      },
+      "pageHeading": {
+        "textTheme": "headlineSmall",
+        "weight": 700
+      },
+      "sectionHeading": {
+        "textTheme": "titleLarge"
+      },
+      "formSubheading": {
+        "textTheme": "titleMedium"
+      },
+      "receiptId": {
+        "textTheme": "bodySmall"
+      },
+      "summaryHeading": {
+        "fontSize": 20,
+        "weight": 600
+      },
+      "summaryBody": {
+        "fontSize": 16,
+        "lineHeight": 1.5
+      },
+      "signInIntroduction": {
+        "fontSize": 17,
+        "lineHeight": 1.5
+      },
+      "outstandingAmount": {
+        "fontSize": 20,
+        "weight": 700
+      },
+      "statusBadge": {
+        "fontSize": 12,
+        "weight": 600
+      }
+    },
+    "scaling": "Platform text scaling remains enabled. Theme text metrics are inherited, not a new fixed scale.",
+    "formatting": {
+      "language": "Indonesian",
+      "currency": "Integer rupiah; Rp prefix, dot-grouped thousands",
+      "timestamps": "Indonesian abbreviated months; DateTime.toLocal() in current formatter"
+    }
+  },
+  "components": {
+    "layout": {
+      "pageBodyMaxWidth": 680,
+      "domainMaxWidth": 800,
+      "entryFormMaxWidth": 640,
+      "ownerPhotoDialogMaxWidth": 560,
+      "structure": "SafeArea, single scrollable column, forms above domain history",
+      "breakpoints": []
+    },
+    "buttons": {
+      "filledMinimum": {
+        "width": 48,
+        "height": 52
+      },
+      "outlinedMinimum": {
+        "width": 48,
+        "height": 48
+      },
+      "textMinimum": {
+        "width": 48,
+        "height": 48
+      },
+      "domainSubmitMinimumHeight": 48,
+      "states": "Material press/focus/disabled rendering; loading disables relevant controls and shows progress/task text"
+    },
+    "input": {
+      "fill": "surface",
+      "border": "border",
+      "radius": 12,
+      "padding": {
+        "horizontal": 16,
+        "vertical": 16
+      },
+      "states": "Focus/error/disabled appearance inherited from Material; inline validators"
+    },
+    "navigation": {
+      "type": "Material NavigationBar",
+      "height": 76,
+      "background": "surface",
+      "indicator": "generated primaryContainer",
+      "owner": [
+        "Ringkasan",
+        "Karyawan",
+        "Absensi",
+        "Bon"
+      ],
+      "employee": [
+        "Beranda",
+        "Absensi",
+        "Bon",
+        "Akun"
+      ],
+      "state": "IndexedStack retains visited pages and drafts; returning to dashboard refreshes data"
+    },
+    "statusBadge": {
+      "radius": 8,
+      "fontSize": 12,
+      "fontWeight": 600,
+      "positive": "primary",
+      "pending": "statusWarning",
+      "rejectedInactive": "statusNegative",
+      "backgroundAlpha": 0.09,
+      "semantics": "Status plus localized visible label"
+    },
+    "errorNotice": {
+      "surface": "errorSurface",
+      "text": "errorText",
+      "radius": 12,
+      "padding": 16,
+      "liveRegion": true,
+      "retry": "Optional Coba lagi text action"
+    },
+    "emptyState": {
+      "iconSize": 36,
+      "padding": {
+        "vertical": 32,
+        "horizontal": 16
+      },
+      "content": "Icon, title and explanation; zero-data and filtered-empty wording differ"
+    },
+    "dashboard": {
+      "summarySurface": "ink",
+      "summaryRadius": 16,
+      "summaryPadding": 20,
+      "recentRecordsPerDomain": 5
+    },
+    "login": {
+      "autofill": true,
+      "passwordToggleTooltip": true,
+      "missingEndpoint": "Inline configuration error and disabled action",
+      "busyLabel": "Memeriksa akun…"
+    },
+    "bon": {
+      "photoRequired": false,
+      "amount": "Digits-only integer rupiah",
+      "currentValidator": {
+        "minimum": 1,
+        "maximum": 1000000000,
+        "note": "Technical limit; business maximum remains open in PRODUCT.md"
+      },
+      "note": {
+        "optional": true,
+        "maxLength": 500,
+        "minLines": 2,
+        "maxLines": 5
+      },
+      "ownerActions": {
+        "pending": [
+          "Setujui",
+          "Tolak"
+        ],
+        "approved": [
+          "Catat pencairan"
+        ],
+        "disbursed": [
+          "Catat pembayaran when outstanding > 0"
+        ]
+      },
+      "uncertain": "Lock draft; preserve request identity; retry label Periksa pengiriman",
+      "receipt": "Live region containing server amount, timestamp, ID and status"
+    },
+    "attendance": {
+      "photoRequired": true,
+      "choices": [
+        "Masuk",
+        "Pulang"
+      ],
+      "camera": {
+        "source": "camera",
+        "preferredDevice": "front",
+        "quality": 75,
+        "maxWidth": 1600,
+        "maxHeight": 1600
+      },
+      "preview": "4:3 contained image; empty placeholder before capture",
+      "uncertain": "Lock kind/photo changes and preserve submission identity",
+      "ownerPhoto": "Private fetched photo with semantic label in InteractiveViewer",
+      "receipt": "Live region with server kind, timestamp and ID"
+    },
+    "employees": {
+      "avatar": "Initial on avatarSurface",
+      "username": "3–64 allowed characters; read-only on edit",
+      "nameMaxLength": 100,
+      "passwordMinimumLength": 12,
+      "passwordReplacement": "Optional when editing",
+      "activeControl": "SwitchListTile.adaptive"
+    },
+    "feedback": {
+      "loading": "Linear progress for histories, compact spinner for submitting actions",
+      "success": "Confirmed inline receipts or SnackBar for owner actions/recovery",
+      "pending": "Home-level notice and check/recovery action",
+      "pagination": "Explicit load-more action; search/filter operates on loaded records"
+    },
+    "assets": {
+      "externalAssets": [],
+      "externalFonts": [],
+      "icons": "Flutter SDK Material Icons",
+      "photos": "Private user-captured attendance evidence only",
+      "motion": "Material defaults; no custom animation tokens"
+    }
+  },
+  "verification": {
+    "basis": "Source inspection and existing actual Flutter widget captures; no new device execution claimed by this documentation task",
+    "sources": [
+      "test/mobile_layout_test.dart",
+      "test/forms_test.dart",
+      "test/widget_test.dart"
+    ],
+    "previews": {
+      "renderer": "RenderRepaintBoundary from MyApp/HomePage, actual Flutter widget code",
+      "logicalViewport": {
+        "width": 390,
+        "height": 844
+      },
+      "capturePixelRatio": 2,
+      "files": [
+        "docs/previews/sign-in.png",
+        "docs/previews/employee-home.png",
+        "docs/previews/employee-bon.png",
+        "docs/previews/owner-home.png"
+      ],
+      "data": "In-memory fixture names, zero records and a synthetic 125000 bon draft; not production data",
+      "fontProvenance": "Flutter SDK Roboto and MaterialIcons loaded by widget capture test; no external font/asset"
+    },
+    "narrowCheck": {
+      "width": 320,
+      "height": 740,
+      "textScale": 2,
+      "scope": "Employee bon after draft entry; not every route"
+    },
+    "existingSemantics": [
+      "Status labels",
+      "Error/receipt live regions",
+      "Tooltips on major icon actions",
+      "Image semantic labels",
+      "Material field labels and controls"
+    ],
+    "deviceQualified": false,
+    "emulatorOrDeviceAvailable": false,
+    "remainingInstalledAppChecks": [
+      "TalkBack and VoiceOver order/announcements",
+      "Target bounds and reach on hardware",
+      "Contrast across generated/disabled/focus states",
+      "All routes/dialogs at large text",
+      "Keyboard/IME and safe-area overlap",
+      "Camera permission, handoff and recovery",
+      "Intermittent network outcomes"
+    ],
+    "claimsExcluded": [
+      "Accessibility conformance audit",
+      "Production data verification",
+      "Deployment completion",
+      "Native device qualification"
+    ]
+  }
+}

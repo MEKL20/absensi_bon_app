@@ -1,30 +1,36 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-
+import 'package:absensi_bon_app/api_client.dart';
 import 'package:absensi_bon_app/main.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
-
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
-
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
+  testWidgets('sign in validates empty fields without sending requests', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MyApp(api: ApiClient(baseUrl: 'https://example.test')),
+    );
+    await tester.ensureVisible(find.widgetWithText(FilledButton, 'Masuk'));
+    await tester.tap(find.widgetWithText(FilledButton, 'Masuk'));
     await tester.pump();
+    expect(find.text('Isi username Anda.'), findsOneWidget);
+    expect(find.text('Isi password Anda.'), findsOneWidget);
+    expect(find.byIcon(Icons.add), findsNothing);
+  });
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+  testWidgets('missing endpoint disables login with actionable message', (
+    tester,
+  ) async {
+    await tester.pumpWidget(MyApp(api: ApiClient(baseUrl: '')));
+    expect(
+      find.text('Layanan belum dikonfigurasi. Hubungi pengelola aplikasi.'),
+      findsOneWidget,
+    );
+    expect(
+      tester
+          .widget<FilledButton>(find.widgetWithText(FilledButton, 'Masuk'))
+          .onPressed,
+      isNull,
+    );
   });
 }

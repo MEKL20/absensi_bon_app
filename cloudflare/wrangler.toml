@@ -1,0 +1,24 @@
+name = "absensi-bon-api"
+main = "src/index.js"
+compatibility_date = "2026-08-06"
+workers_dev = false
+
+[vars]
+BUSINESS_TIMEZONE = "Asia/Jakarta"
+SESSION_TTL_SECONDS = "86400"
+MAX_BON_AMOUNT = "1000000000"
+# No destructive photo retention until explicitly configured.
+PHOTO_RETENTION_DAYS = "0"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "absensi-bon"
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "migrations"
+
+[[r2_buckets]]
+binding = "PHOTOS"
+bucket_name = "replace-with-private-attendance-bucket"
+
+[triggers]
+crons = ["17 3 * * *"]

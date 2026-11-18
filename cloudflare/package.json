@@ -1,0 +1,19 @@
+{
+  "name": "absensi-bon-cloudflare",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "benchmark": "node scripts/benchmark.js",
+    "bootstrap": "node scripts/bootstrap-owner.js",
+    "dev": "wrangler dev",
+    "check": "wrangler deploy --dry-run",
+    "db:migrate:local": "wrangler d1 migrations apply absensi-bon --local"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2",
+    "miniflare": "^4.0.0",
+    "prettier": "^3.10.1",
+    "wrangler": "^4.0.0"
+  }
+}

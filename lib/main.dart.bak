@@ -42,7 +42,7 @@ class _AbsensiPageState extends State<AbsensiPage> {
   }
 
   Future<String?> uploadToImgBB(File imageFile) async {
-    final uri = Uri.parse('https://api.imgbb.com/1/upload?expiration=120&key=34e69bc080f2734a34afb73c91fcc605');
+    final uri = Uri.parse('https://api.imgbb.com/1/upload?expiration=120&key=REDACTED_LEGACY_KEY');
 
     final bytes = await imageFile.readAsBytes();
     final base64Image = base64Encode(bytes);
@@ -83,7 +83,7 @@ class _AbsensiPageState extends State<AbsensiPage> {
         SnackBar(content: Text('Mengirim data...')),
       );
 
-      final uriImgbb = Uri.parse('https://api.imgbb.com/1/upload?expiration=120&key=34e69bc080f2734a34afb73c91fcc605');
+      final uriImgbb = Uri.parse('https://api.imgbb.com/1/upload?expiration=120&key=REDACTED_LEGACY_KEY');
 
       var request = http.MultipartRequest('POST', uriImgbb)
         ..files.add(await http.MultipartFile.fromPath('image', _image!.path));
@@ -92,7 +92,7 @@ class _AbsensiPageState extends State<AbsensiPage> {
       final respStr = await result.stream.bytesToString();
       final responseJson = jsonDecode(respStr);
 
-      final url = 'https://script.google.com/macros/s/AKfycbw4i8ambyuwKoO-0DURhNRnmonekqguIU1QJBGugvAGs1C-0_vII1cKf5BaGBImYthC/exec';
+      final url = 'REDACTED_LEGACY_DEPLOYMENT_URL';
       Map<String, String> queryParams = {
         'nama': _namaController.text,
         'tanggal': tanggal,

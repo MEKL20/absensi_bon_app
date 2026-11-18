@@ -1,16 +1,42 @@
-# absensi_bon_app
+# Absensi & Bon
 
-A new Flutter project.
+Installed Flutter mobile app for an owner and employees, backed by Cloudflare Workers, D1 and private R2.
 
-## Getting Started
+- **Owner:** employee account management, current work sessions, private attendance photos, bon approval/rejection, recorded disbursements and repayments.
+- **Employee:** selfie check-in/check-out, attendance history, photo-free bon amount/note requests, request status and personal debt summary.
+- **Bon never requires a photo.** Approval does not create debt; recorded disbursement does. The app records money events and does not transfer funds.
 
-This project is a starting point for a Flutter application.
+## Run the mobile app
 
-A few resources to get you started if this is your first Flutter project:
+Use Flutter 3.32.8 / Dart 3.8.1 or a compatible newer Flutter SDK with Dart 3.8+. Configure a deployed HTTPS API endpoint when building:
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+```powershell
+flutter pub get
+flutter analyze
+flutter test --concurrency=1
+flutter run --dart-define=API_BASE_URL=https://your-api.example.com
+```
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+The endpoint is build-time configuration, not a secret. An unconfigured app explains the missing service and disables sign-in; no production account, fake login, or sample employee data is included. Normal HTTPS certificate validation remains enabled.
+
+On this Windows environment, an isolated SDK is available under the ignored `.tools/flutter` directory. Package resolution succeeded, but plugin symlink creation requires Windows Developer Mode; system settings were not changed. `flutter analyze --no-pub` and `flutter test --no-pub --concurrency=1` run with the resolved packages. Android SDK/iOS build tooling and real-device qualification are still required for release.
+
+## GitHub Actions builds
+
+The [automatic mobile workflow](<.github/workflows/mobile-ci.yml>) builds Android debug APK and iOS simulator artifacts on pull requests and pushes to main. The [manual signed workflow](<.github/workflows/mobile-release.yml>) builds Android APK/AAB and iOS IPA using repository signing secrets. See the [CI/CD setup guide](<docs/CI_CD.md>) for variables, signing credentials, artifact downloads, and platform requirements.
+
+## Backend setup and migration
+
+Follow the [backend guide](<cloudflare/README.md>) for local tests, schema migration, private bucket bindings and owner provisioning. Follow the [migration guide](<docs/MIGRATION.md>) before switching existing users/data. No live Cloudflare resources were provisioned or deployed. No historical employee or financial data was imported.
+
+Cloudflare free allowances are a usage target, not a zero-cost guarantee. Strong password hashing must be measured against the Workers CPU allowance before production. R2 bills overages; attendance photo retention is disabled until explicitly configured.
+
+## Documentation and previews
+
+- [Documentation guide](<docs/README.md>)
+- [Product Requirements Document](<docs/PRD.md>)
+- [Technical Specification Document](<docs/TSD.md>)
+- [Software Design Document](<docs/SDD.md>)
+- [Owner overview preview](<docs/previews/owner-home.png>) and [employee bon preview](<docs/previews/employee-bon.png>)
+
+Previews are actual Flutter widget-renderer captures using empty-state test fixtures; they are not device screenshots or live business records.

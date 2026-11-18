@@ -1,0 +1,142 @@
+name: Mobile signed builds
+
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: Platforms to build
+        type: choice
+        options: [both, android, ios]
+        default: both
+      ios_export_method:
+        description: iOS distribution (profile must match)
+        type: choice
+        options: [app-store-connect, release-testing, debugging]
+        default: app-store-connect
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  FLUTTER_VERSION: '3.32.8'
+  API_BASE_URL: ${{ vars.API_BASE_URL }}
+
+jobs:
+  validate:
+    name: Validate release source
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Validate API endpoint
+        run: python3 ci/validate_mobile_config.py
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - run: python3 -m unittest discover -s ci -p 'test_*.py'
+      - run: flutter pub get --enforce-lockfile
+      - run: dart format --output=none --set-exit-if-changed lib test
+      - run: flutter analyze --no-pub
+      - run: flutter test --no-pub --concurrency=1
+
+  android:
+    name: Signed Android APK and AAB
+    if: inputs.platform == 'both' || inputs.platform == 'android'
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+      REQUIRE_RELEASE_SIGNING: 'true'
+      ANDROID_APPLICATION_ID: ${{ vars.ANDROID_APPLICATION_ID }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - name: Configure temporary signing path
+        run: echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/android-upload.jks" >> "$GITHUB_ENV"
+      - name: Prepare upload keystore
+        run: python3 ci/prepare_android_signing.py
+      - run: flutter pub get --enforce-lockfile
+      - name: Build signed release artifacts
+        run: |
+          flutter build apk --release --no-pub --build-number=${{ github.run_number }} --dart-define="API_BASE_URL=$API_BASE_URL"
+          flutter build appbundle --release --no-pub --build-number=${{ github.run_number }} --dart-define="API_BASE_URL=$API_BASE_URL"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-signed-${{ github.run_number }}
+          path: |
+            build/app/outputs/flutter-apk/app-release.apk
+            build/app/outputs/bundle/release/app-release.aab
+          if-no-files-found: error
+          retention-days: 14
+      - name: Remove temporary keystore
+        if: always()
+        shell: bash
+        run: rm -f -- "$RUNNER_TEMP/android-upload.jks"
+
+  ios:
+    name: Signed iOS IPA
+    if: inputs.platform == 'both' || inputs.platform == 'ios'
+    needs: validate
+    runs-on: macos-15
+    timeout-minutes: 50
+    env:
+      IOS_CERTIFICATE_BASE64: ${{ secrets.IOS_CERTIFICATE_BASE64 }}
+      IOS_CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
+      IOS_PROFILE_BASE64: ${{ secrets.IOS_PROFILE_BASE64 }}
+      IOS_TEAM_ID: ${{ vars.IOS_TEAM_ID }}
+      IOS_BUNDLE_ID: ${{ vars.IOS_BUNDLE_ID }}
+      IOS_EXPORT_METHOD: ${{ inputs.ios_export_method }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Select Xcode 16.4
+        run: sudo xcode-select --switch /Applications/Xcode_16.4.app/Contents/Developer
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+      - name: Install pinned iOS build dependencies
+        run: |
+          gem install cocoapods -v 1.16.2 --no-document
+          gem install xcodeproj -v 1.27.0 --no-document
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - run: flutter pub get --enforce-lockfile
+      - name: Prepare certificate and provisioning profile
+        run: python3 ci/prepare_ios_signing.py
+      - name: Build signed IPA
+        run: flutter build ipa --release --no-pub --build-number=${{ github.run_number }} --export-options-plist="$RUNNER_TEMP/ExportOptions.plist" --dart-define="API_BASE_URL=$API_BASE_URL"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ios-signed-${{ github.run_number }}
+          path: build/ios/ipa/*.ipa
+          if-no-files-found: error
+          retention-days: 14
+      - name: Remove temporary Apple signing credentials
+        if: always()
+        run: python3 ci/prepare_ios_signing.py --cleanup

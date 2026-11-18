@@ -1,146 +1,198 @@
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
+import 'api_client.dart';
 import 'home_page.dart';
+import 'ui.dart';
 
 class LoginPage extends StatefulWidget {
+  const LoginPage({super.key, required this.api});
+  final ApiClient api;
   @override
-  _LoginPageState createState() => _LoginPageState();
+  State<LoginPage> createState() => _LoginPageState();
 }
 
 class _LoginPageState extends State<LoginPage> {
-  final TextEditingController _usernameController = TextEditingController();
-  final TextEditingController _passwordController = TextEditingController();
-  bool _isLoading = false;
+  final _form = GlobalKey<FormState>();
+  final _username = TextEditingController();
+  final _password = TextEditingController();
+  bool _loading = false;
+  bool _obscure = true;
+  String? _error;
 
-  void _login() async {
-    final username = _usernameController.text.trim();
-    final password = _passwordController.text.trim();
-
-    if (username.isEmpty || password.isEmpty) {
-      _showError('Username dan password harus diisi.');
-      return;
-    }
-
-    setState(() => _isLoading = true);
-
-    final url = Uri.parse(
-      'https://script.google.com/macros/s/AKfycbwdmqpsbZgr_Xf-00mqS3V57muT2PH7tnNabPYQ52IqWKtKH8CiQl8QkO3vsTRs2b__LA/exec'
-          '?function=login&username=$username&password=$password',
-    );
-    try {
-      final response = await http.get(url);
-      print(response.body);
-      print(response.statusCode);
-
-      if (response.statusCode == 200) {
-        if (response.body == 'LOGIN_OK') {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (_) => HomePage(namaLogin: username)),
-          );
-        } else {
-          _showError('Login gagal: username atau password salah.');
-        }
-      } else {
-        _showError('Server error: ${response.statusCode}');
-      }
-    } catch (e) {
-      _showError('Terjadi kesalahan: $e');
-    } finally {
-      setState(() => _isLoading = false);
-    }
+  @override
+  void dispose() {
+    _username.dispose();
+    _password.dispose();
+    super.dispose();
   }
 
-  void _showError(String message) {
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: Text('Login Gagal'),
-        content: Text(message),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text('OK'),
-          )
-        ],
-      ),
-    );
+  Future<void> _login() async {
+    if (_loading || !_form.currentState!.validate()) return;
+    FocusScope.of(context).unfocus();
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final user = await widget.api.login(_username.text, _password.text);
+      if (!mounted) return;
+      _password.clear();
+      await Navigator.of(context).pushReplacement(
+        MaterialPageRoute<void>(
+          builder: (_) => HomePage(api: widget.api, user: user),
+        ),
+      );
+    } catch (error) {
+      if (mounted) setState(() => _error = apiError(error));
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
   }
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.green[50],
-      appBar: AppBar(
-        title: Text('Login Aplikasi'),
-        centerTitle: true,
-        backgroundColor: Colors.green,
-        foregroundColor: Colors.white,
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24.0),
-        child: Column(
+  Widget build(BuildContext context) => Scaffold(
+    body: PageBody(
+      child: AutofillGroup(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(24, 48, 24, 32),
           children: [
-            SizedBox(height: 50),
-            Text(
-              'Selamat Datang 👋',
-              style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: AppColors.primary,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: const Icon(
+                  Icons.badge_outlined,
+                  color: Colors.white,
+                  size: 32,
+                ),
+              ),
             ),
-            SizedBox(height: 12),
+            const SizedBox(height: 28),
             Text(
-              'Silakan login terlebih dahulu',
-              style: TextStyle(fontSize: 16, color: Colors.grey[700]),
+              'Absensi & Bon',
+              style: Theme.of(context).textTheme.headlineLarge?.copyWith(
+                fontWeight: FontWeight.w700,
+                color: AppColors.ink,
+              ),
             ),
-            SizedBox(height: 40),
-            Card(
-              elevation: 6,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              child: Padding(
-                padding: const EdgeInsets.all(20.0),
-                child: Column(
-                  children: [
-                    TextField(
-                      controller: _usernameController,
-                      decoration: InputDecoration(
-                        labelText: 'Nama',
-                        border: OutlineInputBorder(),
-                      ),
+            const SizedBox(height: 12),
+            const Text(
+              'Satu tempat untuk kehadiran dan bon karyawan.',
+              style: TextStyle(
+                fontSize: 17,
+                height: 1.5,
+                color: AppColors.muted,
+              ),
+            ),
+            const SizedBox(height: 36),
+            Text(
+              'Masuk ke akun Anda',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Gunakan akun yang diberikan pemilik usaha.',
+              style: TextStyle(color: AppColors.muted),
+            ),
+            const SizedBox(height: 24),
+            if (!widget.api.isConfigured)
+              const Padding(
+                padding: EdgeInsets.only(bottom: 16),
+                child: ErrorNotice(
+                  message:
+                      'Layanan belum dikonfigurasi. Hubungi pengelola aplikasi.',
+                ),
+              ),
+            if (_error != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 16),
+                child: ErrorNotice(message: _error!),
+              ),
+            Form(
+              key: _form,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  TextFormField(
+                    controller: _username,
+                    enabled: !_loading,
+                    autofillHints: const [AutofillHints.username],
+                    textInputAction: TextInputAction.next,
+                    autocorrect: false,
+                    decoration: const InputDecoration(
+                      labelText: 'Username',
+                      prefixIcon: Icon(Icons.person_outline),
                     ),
-                    SizedBox(height: 16),
-                    TextField(
-                      controller: _passwordController,
-                      obscureText: true,
-                      decoration: InputDecoration(
-                        labelText: 'Password',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                    SizedBox(height: 32),
-                    _isLoading
-                        ? CircularProgressIndicator()
-                        : SizedBox(
-                      width: double.infinity,
-                      height: 50,
-                      child: ElevatedButton(
-                        onPressed: _login,
-                        child: Text('Login'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.green,
-                          foregroundColor: Colors.white,
-                          textStyle: TextStyle(fontSize: 16),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
+                    validator: (value) => value == null || value.trim().isEmpty
+                        ? 'Isi username Anda.'
+                        : null,
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: _password,
+                    enabled: !_loading,
+                    obscureText: _obscure,
+                    autofillHints: const [AutofillHints.password],
+                    textInputAction: TextInputAction.done,
+                    autocorrect: false,
+                    enableSuggestions: false,
+                    onFieldSubmitted: (_) => _login(),
+                    decoration: InputDecoration(
+                      labelText: 'Password',
+                      prefixIcon: const Icon(Icons.lock_outline),
+                      suffixIcon: IconButton(
+                        tooltip: _obscure
+                            ? 'Tampilkan password'
+                            : 'Sembunyikan password',
+                        onPressed: () => setState(() => _obscure = !_obscure),
+                        icon: Icon(
+                          _obscure
+                              ? Icons.visibility_outlined
+                              : Icons.visibility_off_outlined,
                         ),
                       ),
                     ),
-                  ],
-                ),
+                    validator: (value) => value == null || value.isEmpty
+                        ? 'Isi password Anda.'
+                        : null,
+                  ),
+                  const SizedBox(height: 24),
+                  FilledButton(
+                    onPressed: _loading || !widget.api.isConfigured
+                        ? null
+                        : _login,
+                    child: _loading
+                        ? const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              ),
+                              SizedBox(width: 12),
+                              Text('Memeriksa akun…'),
+                            ],
+                          )
+                        : const Text('Masuk'),
+                  ),
+                ],
               ),
+            ),
+            const SizedBox(height: 24),
+            const Text(
+              'Lupa password? Hubungi pemilik usaha untuk mengatur ulang akun.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: AppColors.muted, height: 1.5),
             ),
           ],
         ),
       ),
-    );
-  }
+    ),
+  );
 }
