@@ -8,7 +8,7 @@ Installed Flutter mobile app for an owner and employees, backed by Cloudflare Wo
 
 ## Run the mobile app
 
-Use Flutter 3.32.8 / Dart 3.8.1 or a compatible newer Flutter SDK with Dart 3.8+. Configure a deployed HTTPS API endpoint when building:
+Use Flutter 3.32.8 / Dart 3.8.1 or a compatible newer Flutter SDK with Dart 3.8+. On first launch the app opens the workspace gate: the owner creates or joins a customer-owned Cloudflare workspace, and employees scan the workspace QR. A build-time endpoint is only an optional pre-pairing hint:
 
 ```powershell
 flutter pub get
@@ -17,7 +17,7 @@ flutter test --concurrency=1
 flutter run --dart-define=API_BASE_URL=https://your-api.example.com
 ```
 
-The endpoint is build-time configuration, not a secret. An unconfigured app explains the missing service and disables sign-in; no production account, fake login, or sample employee data is included. Normal HTTPS certificate validation remains enabled.
+The endpoint is build-time configuration, not a secret. Without a paired workspace the app explains onboarding and disables sign-in; no production account, fake login, or sample employee data is included. Normal HTTPS certificate validation remains enabled. See [owner onboarding](<docs/ONBOARDING.md>) for the Cloudflare/GitHub steps each business completes in their own account.
 
 On this Windows environment, an isolated SDK is available under the ignored `.tools/flutter` directory. Package resolution succeeded, but plugin symlink creation requires Windows Developer Mode; system settings were not changed. `flutter analyze --no-pub` and `flutter test --no-pub --concurrency=1` run with the resolved packages. Android SDK/iOS build tooling and real-device qualification are still required for release.
 
@@ -37,6 +37,7 @@ Cloudflare free allowances are a usage target, not a zero-cost guarantee. Strong
 - [Product Requirements Document](<docs/PRD.md>)
 - [Technical Specification Document](<docs/TSD.md>)
 - [Software Design Document](<docs/SDD.md>)
+- [Owner onboarding and workspace pairing](<docs/ONBOARDING.md>)
 - [Owner overview preview](<docs/previews/owner-home.png>) and [employee bon preview](<docs/previews/employee-bon.png>)
 
 Previews are actual Flutter widget-renderer captures using empty-state test fixtures; they are not device screenshots or live business records.

@@ -22,5 +22,17 @@ test("owner bootstrap SQL safely quotes values and never replaces an owner", () 
   db.exec(ownerBootstrapSql({ ...details, id: "second", username: "second" }));
   assert.equal(db.prepare("SELECT COUNT(*) AS n FROM users").get().n, 1);
   assert.equal(db.prepare("SELECT name FROM users").get().name, "O'Brien");
+  db.exec(
+    readFileSync(
+      new URL("../migrations/0002_workspace.sql", import.meta.url),
+      "utf8",
+    ),
+  );
+  assert.equal(
+    db.prepare("SELECT claimed_at FROM workspace_setup").get().claimed_at,
+    details.createdAt,
+  );
+  db.exec("DELETE FROM users");
+  assert.throws(() => db.exec(ownerBootstrapSql(details)), /workspace_claimed/);
   db.close();
 });

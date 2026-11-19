@@ -1,0 +1,2 @@
+# Declaration only. Set the 64-character SHA-256 digest as a Worker secret, never the raw token.
+OWNER_SETUP_TOKEN_SHA256=

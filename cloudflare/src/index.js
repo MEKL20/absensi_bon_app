@@ -3,6 +3,7 @@ import {
   verifyPassword,
   sha256,
   randomToken,
+  matchesSetupToken,
   DUMMY_HASH,
 } from "./crypto.js";
 const USER_COLUMNS = "id,name,username,role,active";
@@ -20,17 +21,15 @@ class ApiError extends Error {
 const fail = (status, code, message) => {
   throw new ApiError(status, code, message);
 };
-const ok = (data, status = 200) =>
-  Response.json(
-    { ok: true, ...data },
-    {
-      status,
-      headers: {
-        "Cache-Control": "no-store",
-        "X-Content-Type-Options": "nosniff",
-      },
+const reply = (data, status = 200) =>
+  Response.json(data, {
+    status,
+    headers: {
+      "Cache-Control": "no-store",
+      "X-Content-Type-Options": "nosniff",
     },
-  );
+  });
+const ok = (data, status) => reply({ ok: true, ...data }, status);
 const stmt = (env, sql, ...args) => env.DB.prepare(sql).bind(...args);
 const first = (env, sql, ...args) => stmt(env, sql, ...args).first();
 const all = async (env, sql, ...args) =>
@@ -44,6 +43,12 @@ const employee = (u) => {
     fail(403, "forbidden", "Employee access required.");
 };
 const now = () => new Date().toISOString();
+function sessionExpiry(env) {
+  return new Date(
+    Date.now() +
+      integerConfig(env, "SESSION_TTL_SECONDS", 86400, 300, 2592000) * 1000,
+  ).toISOString();
+}
 function integerConfig(env, key, fallback, min, max) {
   const n = Number(env[key] ?? fallback);
   if (!Number.isSafeInteger(n) || n < min || n > max)
@@ -214,10 +219,7 @@ async function login(request, env) {
     fail(401, "invalid_credentials", "Invalid username or password.");
   const token = randomToken(),
     created = now(),
-    expires = new Date(
-      Date.now() +
-        integerConfig(env, "SESSION_TTL_SECONDS", 86400, 300, 2592000) * 1000,
-    ).toISOString();
+    expires = sessionExpiry(env);
   // Guard against a concurrent password reset/deactivation while the expensive KDF is running.
   const result = await stmt(
     env,
@@ -236,6 +238,96 @@ async function login(request, env) {
       Object.fromEntries(USER_COLUMNS.split(",").map((k) => [k, u[k]])),
     ),
   });
+}
+async function workspace(env) {
+  const row = await first(
+    env,
+    "SELECT workspace_id AS id,workspace_name AS name,claimed_at FROM workspace_setup WHERE id=1",
+  );
+  if (!row) fail(503, "setup_unavailable", "Workspace is unavailable.");
+  return { id: row.id, name: row.name, ready: row.claimed_at !== null };
+}
+async function setupOwner(request, env) {
+  const digest = env.OWNER_SETUP_TOKEN_SHA256;
+  if (
+    typeof digest !== "string" ||
+    digest.length !== 64 ||
+    !/^[0-9a-f]{64}$/i.test(digest)
+  )
+    fail(503, "setup_unavailable", "Owner setup is unavailable.");
+  const data = await json(request, [
+    "setupToken",
+    "name",
+    "username",
+    "password",
+    "workspaceName",
+  ]);
+  if (!(await matchesSetupToken(data.setupToken, digest.toLowerCase())))
+    fail(401, "invalid_setup_token", "Invalid setup token.");
+  const rejectClaimed = async () => {
+    if ((await workspace(env)).ready)
+      fail(
+        409,
+        "workspace_claimed",
+        "Workspace has already been claimed. Sign in instead.",
+      );
+  };
+  await rejectClaimed();
+  const id = crypto.randomUUID(),
+    ownerName = name(data.name),
+    account = username(data.username),
+    workspaceName = name(data.workspaceName),
+    hash = await hashPassword(password(data.password)),
+    token = randomToken(),
+    created = now();
+  // The owner insert sets claimed_at via trigger. Each following write requires the previous write to win.
+  let inserted;
+  try {
+    [inserted] = await env.DB.batch([
+      stmt(
+        env,
+        "INSERT INTO users(id,name,username,password_hash,role,created_at) SELECT ?,?,?,?,'owner',? FROM workspace_setup WHERE id=1 AND claimed_at IS NULL ON CONFLICT(username) DO NOTHING RETURNING id",
+        id,
+        ownerName,
+        account,
+        hash,
+        created,
+      ),
+      stmt(
+        env,
+        "UPDATE workspace_setup SET workspace_name=? WHERE id=1 AND changes()=1",
+        workspaceName,
+      ),
+      stmt(
+        env,
+        "INSERT INTO sessions(token_hash,user_id,expires_at,created_at) SELECT ?,?,?,? WHERE changes()=1",
+        await sha256(token),
+        id,
+        sessionExpiry(env),
+        created,
+      ),
+    ]);
+  } catch (error) {
+    await rejectClaimed();
+    throw error;
+  }
+  if (inserted.results.length !== 1) {
+    await rejectClaimed();
+    fail(409, "username_taken", "Username is already in use.");
+  }
+  return ok(
+    {
+      token,
+      user: {
+        id,
+        name: ownerName,
+        username: account,
+        role: "owner",
+        active: true,
+      },
+    },
+    201,
+  );
 }
 async function existingReceipt(env, actor, key, fingerprint) {
   const row = await first(
@@ -787,6 +879,10 @@ async function route(request, env) {
   const url = new URL(request.url),
     path = url.pathname,
     method = request.method;
+  if (method === "GET" && path === "/v1/workspace")
+    return reply(await workspace(env));
+  if (method === "POST" && path === "/v1/setup/owner")
+    return setupOwner(request, env);
   if (method === "POST" && path === "/v1/auth/login")
     return login(request, env);
   const user = await authenticate(request, env);

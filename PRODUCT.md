@@ -23,6 +23,7 @@ Help a business owner understand attendance and act on employee cash advance req
 - Attendance retains camera photos. Check-in/check-out, history, owner employee management, and bon approval/disbursement/repayment are the accepted implementation direction.
 - Owner and employee navigation differs, but both are part of one mobile app. Server-side identity and authorization determine role.
 - Target Cloudflare free allowances through bounded uploads, indexed queries, and explicit retention; no permanent zero-cost guarantee.
+- Customer-owned onboarding is implemented in source: workspace gate, deploy-link guidance, digest secret instructions, one-time owner claim, QR pairing, and fail-closed workspace verification. Live Cloudflare/GitHub deployment, R2 activation, and secret-entry UI remain manual and unverified.
 - No business accounts, production credentials, historical exports, or Cloudflare account access were provided. Deployment and data migration cannot be represented as completed.
 
 ## Operating Context

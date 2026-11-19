@@ -2,13 +2,30 @@
   "name": "absensi-bon-cloudflare",
   "private": true,
   "type": "module",
+  "description": "Deploy one owner-managed Absensi & Bon workspace with its own Worker, D1, and private R2.",
+  "cloudflare": {
+    "bindings": {
+      "DB": {
+        "description": "Create a new D1 database for this workspace only."
+      },
+      "PHOTOS": {
+        "description": "Create a new private R2 bucket for attendance photos. Do not enable public access."
+      },
+      "OWNER_SETUP_TOKEN_SHA256": {
+        "description": "The 64-character hexadecimal SHA-256 of your one-time setup token. Provide the digest only; enter the raw token only when claiming the workspace in Flutter."
+      }
+    }
+  },
   "scripts": {
     "test": "node --test test/*.test.js",
     "benchmark": "node scripts/benchmark.js",
     "bootstrap": "node scripts/bootstrap-owner.js",
     "dev": "wrangler dev",
     "check": "wrangler deploy --dry-run",
-    "db:migrate:local": "wrangler d1 migrations apply absensi-bon --local"
+    "db:migrate:local": "wrangler d1 migrations apply DB --local",
+    "predeploy": "wrangler d1 migrations apply DB --remote",
+    "deploy": "wrangler deploy",
+    "bundle:app": "node scripts/bundle-app-assets.js"
   },
   "devDependencies": {
     "esbuild": "^0.28.2",

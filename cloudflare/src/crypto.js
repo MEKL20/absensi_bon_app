@@ -14,6 +14,17 @@ export async function sha256(value) {
     ),
   );
 }
+export async function matchesSetupToken(token, digest) {
+  if (typeof token !== "string" || token.length < 1 || token.length > 256)
+    return false;
+  const actual = encoder.encode(await sha256(token));
+  const expected = encoder.encode(digest);
+  if (crypto.subtle.timingSafeEqual)
+    return crypto.subtle.timingSafeEqual(actual, expected);
+  let difference = 0;
+  for (let i = 0; i < actual.length; i++) difference |= actual[i] ^ expected[i];
+  return difference === 0;
+}
 export async function derivePassword(
   password,
   salt,

@@ -1,11 +1,19 @@
 import 'package:flutter/material.dart';
 import 'api_client.dart';
 import 'home_page.dart';
+import 'models.dart';
 import 'ui.dart';
 
 class LoginPage extends StatefulWidget {
-  const LoginPage({super.key, required this.api});
+  const LoginPage({
+    super.key,
+    required this.api,
+    this.signedInUser,
+    this.onChangeWorkspace,
+  });
   final ApiClient api;
+  final AppUser? signedInUser;
+  final Future<void> Function()? onChangeWorkspace;
   @override
   State<LoginPage> createState() => _LoginPageState();
 }
@@ -17,6 +25,23 @@ class _LoginPageState extends State<LoginPage> {
   bool _loading = false;
   bool _obscure = true;
   String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    final user = widget.signedInUser;
+    if (user != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute<void>(
+              builder: (_) => HomePage(api: widget.api, user: user),
+            ),
+          );
+        }
+      });
+    }
+  }
 
   @override
   void dispose() {
@@ -98,7 +123,7 @@ class _LoginPageState extends State<LoginPage> {
               style: TextStyle(color: AppColors.muted),
             ),
             const SizedBox(height: 24),
-            if (!widget.api.isConfigured)
+            if (!widget.api.hasVerifiedWorkspace)
               const Padding(
                 padding: EdgeInsets.only(bottom: 16),
                 child: ErrorNotice(
@@ -161,7 +186,7 @@ class _LoginPageState extends State<LoginPage> {
                   ),
                   const SizedBox(height: 24),
                   FilledButton(
-                    onPressed: _loading || !widget.api.isConfigured
+                    onPressed: _loading || !widget.api.hasVerifiedWorkspace
                         ? null
                         : _login,
                     child: _loading
@@ -190,6 +215,11 @@ class _LoginPageState extends State<LoginPage> {
               textAlign: TextAlign.center,
               style: TextStyle(color: AppColors.muted, height: 1.5),
             ),
+            if (widget.onChangeWorkspace != null)
+              TextButton(
+                onPressed: widget.onChangeWorkspace,
+                child: const Text('Ganti atau hubungkan workspace'),
+              ),
           ],
         ),
       ),

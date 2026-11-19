@@ -1,7 +1,7 @@
 name = "absensi-bon-api"
 main = "src/index.js"
 compatibility_date = "2026-08-06"
-workers_dev = false
+workers_dev = true
 
 [vars]
 BUSINESS_TIMEZONE = "Asia/Jakarta"
@@ -10,6 +10,8 @@ MAX_BON_AMOUNT = "1000000000"
 # No destructive photo retention until explicitly configured.
 PHOTO_RETENTION_DAYS = "0"
 
+# Configure optional Worker secret OWNER_SETUP_TOKEN_SHA256 with the token digest.
+# Missing configuration disables setup but does not prevent deployment or login.
 [[d1_databases]]
 binding = "DB"
 database_name = "absensi-bon"

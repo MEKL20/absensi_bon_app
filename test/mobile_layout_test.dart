@@ -4,10 +4,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+
 import 'package:absensi_bon_app/api_client.dart';
 import 'package:absensi_bon_app/home_page.dart';
 import 'package:absensi_bon_app/main.dart';
 import 'package:absensi_bon_app/models.dart';
+import 'package:absensi_bon_app/workspace_store.dart';
 
 class LayoutApi extends ApiClient {
   LayoutApi() : super(baseUrl: 'https://example.test');
@@ -28,6 +31,15 @@ class LayoutApi extends ApiClient {
   @override
   Future<List<AppUser>> employees({int offset = 0}) async => [];
   @override
+  Future<WorkspaceConnection> inspectWorkspace(String origin) async =>
+      const WorkspaceConnection(
+        origin: 'https://example.test',
+        workspaceId: '0123456789abcdef0123456789abcdef',
+        name: 'Usaha Uji',
+        ready: true,
+      );
+
+  @override
   Future<DashboardData> dashboard() async {
     dashboardLoads++;
     return const DashboardData(
@@ -38,6 +50,51 @@ class LayoutApi extends ApiClient {
       attendance: [],
       bon: [],
     );
+  }
+}
+
+class _MemoryStorage extends FlutterSecureStorage {
+  final Map<String, String> values = {};
+  @override
+  Future<void> write({
+    required String key,
+    required String? value,
+    IOSOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    MacOsOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) async {
+    if (value == null) {
+      values.remove(key);
+    } else {
+      values[key] = value;
+    }
+  }
+
+  @override
+  Future<String?> read({
+    required String key,
+    IOSOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    MacOsOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) async => values[key];
+
+  @override
+  Future<void> delete({
+    required String key,
+    IOSOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    MacOsOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) async {
+    values.remove(key);
   }
 }
 
@@ -85,7 +142,20 @@ void main() {
       addTearDown(tester.view.resetDevicePixelRatio);
       final api = LayoutApi();
       addTearDown(api.close);
-      await tester.pumpWidget(RepaintBoundary(child: MyApp(api: api)));
+      final store = WorkspaceStore(storage: _MemoryStorage());
+      const paired = WorkspaceConnection(
+        origin: 'https://example.test',
+        workspaceId: '0123456789abcdef0123456789abcdef',
+        name: 'Usaha Uji',
+        ready: true,
+      );
+      await store.add(paired);
+      await store.select(paired);
+      await tester.pumpWidget(
+        RepaintBoundary(
+          child: MyApp(api: api, workspaceStore: store),
+        ),
+      );
       await tester.pumpAndSettle();
       await capture(tester, 'sign-in');
       final navigator = tester.state<NavigatorState>(find.byType(Navigator));

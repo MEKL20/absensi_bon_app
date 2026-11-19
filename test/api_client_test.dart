@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:absensi_bon_app/api_client.dart';
 import 'package:absensi_bon_app/pending_store.dart';
+import 'package:absensi_bon_app/workspace_store.dart';
 
 const user = {
   'id': 'employee-1',
@@ -37,24 +38,51 @@ const attendanceRecord = {
 http.Response receipt([Map<String, Object> record = bonRecord]) =>
     http.Response(jsonEncode({'ok': true, 'record': record}), 201);
 
-ApiClient testClient(
+const testWorkspaceId = '0123456789abcdef0123456789abcdef';
+
+Future<ApiClient> testClient(
   Future<http.Response> Function(http.Request) transport, {
   PendingStore? store,
   String baseUrl = 'https://example.test',
   Map<String, Object> account = user,
-}) => ApiClient(
-  baseUrl: baseUrl,
-  pendingStore: store ?? PendingStore.memory(),
-  client: MockClient((request) async {
-    if (request.url.path.endsWith('/login')) {
-      return http.Response(
-        jsonEncode({'ok': true, 'token': 'session-token', 'user': account}),
-        200,
-      );
-    }
-    return transport(request);
-  }),
-);
+}) async {
+  final api = ApiClient(
+    baseUrl: baseUrl,
+    pendingStore: store ?? PendingStore.memory(),
+    client: MockClient((request) async {
+      if (request.url.path == '/v1/workspace') {
+        return http.Response(
+          jsonEncode({
+            'id': testWorkspaceId,
+            'name': 'Usaha Uji',
+            'ready': true,
+          }),
+          200,
+        );
+      }
+      if (request.url.path.endsWith('/login')) {
+        return http.Response(
+          jsonEncode({'ok': true, 'token': 'session-token', 'user': account}),
+          200,
+        );
+      }
+      return transport(request);
+    }),
+  );
+  try {
+    parseWorkspaceOrigin(baseUrl);
+    await api.switchWorkspace(
+      WorkspaceConnection(
+        origin: baseUrl,
+        workspaceId: testWorkspaceId,
+        name: 'Usaha Uji',
+      ),
+    );
+  } catch (_) {
+    // Invalid endpoints stay unpaired so gate tests can assert fail-closed behavior.
+  }
+  return api;
+}
 
 Matcher uncertain = isA<ApiException>().having(
   (e) => e.uncertain,
@@ -72,6 +100,16 @@ void main() {
         pendingStore: PendingStore.memory(),
         client: MockClient((request) async {
           requests.add(request);
+          if (request.url.path == '/v1/workspace') {
+            return http.Response(
+              jsonEncode({
+                'id': testWorkspaceId,
+                'name': 'Usaha Uji',
+                'ready': true,
+              }),
+              200,
+            );
+          }
           if (request.url.path.endsWith('/login')) {
             return http.Response(
               jsonEncode({'ok': true, 'token': 'session-token', 'user': user}),
@@ -81,11 +119,21 @@ void main() {
           return http.Response(jsonEncode({'ok': true, 'bon': []}), 200);
         }),
       );
+      await api.switchWorkspace(
+        const WorkspaceConnection(
+          origin: 'https://example.test',
+          workspaceId: testWorkspaceId,
+          name: 'Usaha Uji',
+        ),
+      );
       await api.login(' ayu ', ' password & secret ');
       await api.bon();
-      expect(requests.first.method, 'POST');
-      expect(requests.first.url.query, isEmpty);
-      expect(jsonDecode(requests.first.body), {
+      final loginRequest = requests.firstWhere(
+        (request) => request.url.path.endsWith('/login'),
+      );
+      expect(loginRequest.method, 'POST');
+      expect(loginRequest.url.query, isEmpty);
+      expect(jsonDecode(loginRequest.body), {
         'username': 'ayu',
         'password': ' password & secret ',
       });
@@ -97,7 +145,7 @@ void main() {
     'bon sends amount and note with retry key, typed success clears and increments',
     () async {
       late http.Request sent;
-      final api = testClient((request) async {
+      final api = await testClient((request) async {
         sent = request;
         return receipt();
       });
@@ -112,7 +160,7 @@ void main() {
       expect(jsonDecode(sent.body), {'amount': 50000, 'note': ''});
       expect(sent.headers['Idempotency-Key'], 'stable-key');
       expect(api.hasPendingRequest, false);
-      expect(api.revision, 1);
+      expect(api.revision, 2);
     },
   );
 
@@ -123,7 +171,7 @@ void main() {
       addTearDown(() => directory.delete(recursive: true));
       final file = File('${directory.path}/pending.json');
       final sent = <http.Request>[];
-      final first = testClient((request) async {
+      final first = await testClient((request) async {
         sent.add(request);
         throw http.ClientException('disconnected');
       }, store: PendingStore.file(file));
@@ -137,13 +185,13 @@ void main() {
         throwsA(uncertain),
       );
       expect(first.hasPendingRequest, true);
-      expect(first.revision, 0);
+      expect(first.revision, 1);
       final persisted = await file.readAsString();
       expect(persisted, contains('original-id'));
       expect(persisted, isNot(contains('never-store-password')));
       expect(persisted, isNot(contains('session-token')));
       first.close();
-      final restarted = testClient((request) async {
+      final restarted = await testClient((request) async {
         sent.add(request);
         return receipt();
       }, store: PendingStore.file(file));
@@ -157,7 +205,7 @@ void main() {
         sent.first.headers['Idempotency-Key'],
       );
       expect(restarted.hasPendingRequest, false);
-      expect(restarted.revision, 1);
+      expect(restarted.revision, 2);
       expect(
         await PendingStore.file(
           file,
@@ -183,7 +231,7 @@ void main() {
       () async {
         var sends = 0;
         var valid = false;
-        final api = testClient((_) async {
+        final api = await testClient((_) async {
           sends++;
           return valid ? receipt() : http.Response(jsonEncode(malformed), 200);
         });
@@ -193,7 +241,7 @@ void main() {
           throwsA(uncertain),
         );
         expect(api.hasPendingRequest, true);
-        expect(api.revision, 0);
+        expect(api.revision, 1);
         await expectLater(
           api.submitBon(amount: 2, note: '', requestId: 'key'),
           throwsA(
@@ -220,7 +268,7 @@ void main() {
         valid = true;
         await api.recoverPending();
         expect(api.hasPendingRequest, false);
-        expect(api.revision, 1);
+        expect(api.revision, 2);
       },
     );
   }
@@ -230,7 +278,7 @@ void main() {
       'definitive rejection $status releases pending for another mutation',
       () async {
         var reject = true;
-        final api = testClient(
+        final api = await testClient(
           (_) async => reject
               ? http.Response(
                   jsonEncode({
@@ -249,10 +297,10 @@ void main() {
           ),
         );
         expect(api.hasPendingRequest, false);
-        expect(api.revision, 0);
+        expect(api.revision, 1);
         reject = false;
         await api.submitBon(amount: 2, note: '', requestId: 'new-key');
-        expect(api.revision, 1);
+        expect(api.revision, 2);
       },
     );
   }
@@ -261,7 +309,7 @@ void main() {
     test('status $status retains pending across signout and relogin', () async {
       final store = PendingStore.memory();
       var fail = true;
-      final api = testClient((request) async {
+      final api = await testClient((request) async {
         if (request.url.path.endsWith('/logout')) {
           return http.Response(
             jsonEncode({
@@ -287,7 +335,10 @@ void main() {
         throwsA(uncertain),
       );
       await api.logout();
-      expect(await store.load('https://example.test', 'employee-1'), isNotNull);
+      expect(
+        await store.load('https://example.test', 'employee-1', testWorkspaceId),
+        isNotNull,
+      );
       fail = false;
       await api.login('ayu', 'password');
       expect(api.hasPendingRequest, true);
@@ -298,7 +349,7 @@ void main() {
 
   test('timeout and invalid JSON retain original request', () async {
     for (final failure in [TimeoutException('timeout'), null]) {
-      final api = testClient((_) async {
+      final api = await testClient((_) async {
         if (failure != null) throw failure;
         return http.Response('not JSON', 200);
       });
@@ -320,7 +371,7 @@ void main() {
       await photo.writeAsBytes([1, 2, 3, 4, 5]);
       final store = PendingStore.memory();
       final sent = <http.Request>[];
-      final first = testClient((request) async {
+      final first = await testClient((request) async {
         sent.add(request);
         throw http.ClientException('offline');
       }, store: store);
@@ -333,10 +384,14 @@ void main() {
         ),
         throwsA(uncertain),
       );
-      final pending = (await store.load('https://example.test', 'employee-1'))!;
+      final pending = (await store.load(
+        'https://example.test',
+        'employee-1',
+        testWorkspaceId,
+      ))!;
       expect(pending.photoBase64, base64Encode([1, 2, 3, 4, 5]));
       await photo.delete();
-      final restarted = testClient((request) async {
+      final restarted = await testClient((request) async {
         sent.add(request);
         return receipt(attendanceRecord);
       }, store: store);
@@ -348,7 +403,7 @@ void main() {
         expect(request.bodyBytes, containsAllInOrder([1, 2, 3, 4, 5]));
       }
       expect(restarted.hasPendingRequest, false);
-      expect(restarted.revision, 1);
+      expect(restarted.revision, 2);
     },
   );
 
@@ -359,7 +414,9 @@ void main() {
       addTearDown(() => directory.delete(recursive: true));
       final photo = File('${directory.path}/photo.jpg');
       await photo.writeAsBytes(List.filled(2 * 1024 * 1024 + 1, 0));
-      final api = testClient((_) async => throw StateError('must not send'));
+      final api = await testClient(
+        (_) async => throw StateError('must not send'),
+      );
       await api.login('ayu', 'password');
       await expectLater(
         api.submitAttendance(kind: 'check_in', photo: photo, requestId: 'key'),
@@ -376,7 +433,7 @@ void main() {
     () async {
       final store = PendingStore.memory();
       late http.Request original;
-      final first = testClient((request) async {
+      final first = await testClient((request) async {
         original = request;
         throw http.ClientException('offline');
       }, store: store);
@@ -390,7 +447,7 @@ void main() {
         ),
         throwsA(uncertain),
       );
-      final restarted = testClient((request) async {
+      final restarted = await testClient((request) async {
         expect(request.url, original.url);
         expect(request.body, original.body);
         expect(request.headers['Idempotency-Key'], 'action-key');
@@ -410,7 +467,7 @@ void main() {
     addTearDown(() => directory.delete(recursive: true));
     final blocker = File('${directory.path}/not-a-directory');
     await blocker.writeAsString('block');
-    final api = testClient(
+    final api = await testClient(
       (_) async => throw StateError('must not send'),
       store: PendingStore.file(File('${blocker.path}/pending.json')),
     );
@@ -421,14 +478,14 @@ void main() {
         isA<ApiException>().having((e) => e.code, 'code', 'pending_storage'),
       ),
     );
-    expect(api.revision, 0);
+    expect(api.revision, 1);
   });
 
   test('only one write may be in flight', () async {
     final started = Completer<void>();
     final response = Completer<http.Response>();
     var sends = 0;
-    final api = testClient((_) {
+    final api = await testClient((_) {
       sends++;
       started.complete();
       return response.future;
@@ -444,7 +501,7 @@ void main() {
     expect(sends, 1);
     response.complete(receipt());
     await first;
-    expect(api.revision, 1);
+    expect(api.revision, 2);
   });
 
   test('store scopes pending by normalized base URL and user', () async {
@@ -454,14 +511,14 @@ void main() {
       'employee-1',
       PendingRequest(path: '/v1/bon', requestId: 'key', payload: {'amount': 1}),
     );
-    final otherUser = testClient(
+    final otherUser = await testClient(
       (_) async => receipt(),
       store: store,
       account: {...user, 'id': 'employee-2'},
     );
     await otherUser.login('another', 'password');
     expect(otherUser.hasPendingRequest, false);
-    final otherUrl = testClient(
+    final otherUrl = await testClient(
       (_) async => receipt(),
       store: store,
       baseUrl: 'https://other.test',
@@ -488,7 +545,7 @@ void main() {
   );
 
   test('expired session can log out and history exposes next page', () async {
-    final api = testClient((request) async {
+    final api = await testClient((request) async {
       if (request.url.path.endsWith('/logout')) {
         return http.Response(
           jsonEncode({
@@ -517,13 +574,13 @@ void main() {
     'employee writes parse typed receipts and never persist credentials',
     () async {
       final store = PendingStore.memory();
-      final api = testClient(
+      final api = await testClient(
         (_) async => http.Response(jsonEncode({'ok': true, 'user': user}), 201),
         store: store,
       );
       await api.login('ayu', 'password');
       await api.saveEmployee(name: 'Ayu', username: 'ayu', password: 'secret');
-      expect(api.revision, 1);
+      expect(api.revision, 2);
       expect(await store.load('https://example.test', 'employee-1'), isNull);
       expect(api.hasPendingRequest, false);
     },
@@ -532,7 +589,7 @@ void main() {
   test(
     'malformed employee receipt is uncertain and does not increment revision',
     () async {
-      final api = testClient(
+      final api = await testClient(
         (_) async => http.Response(jsonEncode({'ok': true}), 200),
       );
       await api.login('ayu', 'password');
@@ -540,7 +597,7 @@ void main() {
         api.saveEmployee(name: 'Ayu', username: 'ayu'),
         throwsA(uncertain),
       );
-      expect(api.revision, 0);
+      expect(api.revision, 1);
     },
   );
 
@@ -550,12 +607,105 @@ void main() {
       'http://example.test',
       'https://example.test?token=secret',
     ]) {
-      final api = testClient(
-        (_) async => throw StateError('must not send'),
+      final api = ApiClient(
         baseUrl: url,
+        pendingStore: PendingStore.memory(),
+        client: MockClient((_) async => throw StateError('must not send')),
       );
       expect(api.isConfigured, false);
       await expectLater(api.bon(), throwsA(isA<ApiException>()));
     }
   });
+
+  test('unverified workspace blocks login before transport', () async {
+    final api = ApiClient(
+      baseUrl: 'https://example.test',
+      pendingStore: PendingStore.memory(),
+      client: MockClient((_) async => throw StateError('must not send')),
+    );
+    await expectLater(
+      api.login('ayu', 'password'),
+      throwsA(isA<ApiException>()),
+    );
+    expect(api.hasVerifiedWorkspace, false);
+  });
+
+  test('unclaimed workspace cannot become active', () async {
+    final api = ApiClient(
+      baseUrl: 'https://example.test',
+      pendingStore: PendingStore.memory(),
+      client: MockClient(
+        (request) async => http.Response(
+          jsonEncode({
+            'id': testWorkspaceId,
+            'name': 'Usaha Uji',
+            'ready': false,
+          }),
+          200,
+        ),
+      ),
+    );
+    await expectLater(
+      api.switchWorkspace(
+        const WorkspaceConnection(
+          origin: 'https://example.test',
+          workspaceId: testWorkspaceId,
+          name: 'Usaha Uji',
+        ),
+      ),
+      throwsA(
+        isA<ApiException>().having(
+          (e) => e.code,
+          'code',
+          'workspace_unclaimed',
+        ),
+      ),
+    );
+    expect(api.hasVerifiedWorkspace, false);
+  });
+
+  test(
+    'owner claim sends one-time setup token and validates receipt',
+    () async {
+      late http.Request sent;
+      final api = ApiClient(
+        baseUrl: 'https://example.test',
+        pendingStore: PendingStore.memory(),
+        client: MockClient((request) async {
+          sent = request;
+          return http.Response(
+            jsonEncode({
+              'ok': true,
+              'token': 'c' * 64,
+              'user': {
+                'id': 'owner-1',
+                'name': 'Pemilik',
+                'username': 'pemilik',
+                'role': 'owner',
+                'active': true,
+              },
+            }),
+            201,
+          );
+        }),
+      );
+      final result = await api.claimWorkspaceOwner(
+        const WorkspaceConnection(
+          origin: 'https://example.test',
+          workspaceId: testWorkspaceId,
+          name: 'Usaha',
+        ),
+        setupToken: 'raw-setup-token',
+        name: 'Pemilik',
+        username: 'pemilik',
+        password: 'password rahasia 12',
+        workspaceName: 'Usaha',
+      );
+      expect(sent.url.path, '/v1/setup/owner');
+      expect(sent.url.query, isEmpty);
+      expect(jsonDecode(sent.body)['setupToken'], 'raw-setup-token');
+      expect(result.$1.role, 'owner');
+      expect(result.$2, 'c' * 64);
+    },
+  );
 }

@@ -47,6 +47,8 @@ app.*.map.json
 # Local toolchain and backend artifacts
 .tools/
 node_modules/
+.pytest_cache/
+__pycache__/
 .wrangler/
 .dev.vars
 .env

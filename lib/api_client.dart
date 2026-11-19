@@ -7,6 +7,7 @@ import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 import 'models.dart';
 import 'pending_store.dart';
+import 'workspace_store.dart';
 
 String newRequestId() {
   final random = Random.secure();
@@ -27,11 +28,231 @@ class ApiException implements Exception {
 
 class ApiClient {
   ApiClient({String? baseUrl, http.Client? client, PendingStore? pendingStore})
-    : baseUrl = baseUrl ?? const String.fromEnvironment('API_BASE_URL'),
+    : _initialBaseUrl = baseUrl ?? const String.fromEnvironment('API_BASE_URL'),
+      _baseUrl = '',
       _client = client ?? http.Client(),
       _pendingStore = pendingStore ?? PendingStore();
 
-  final String baseUrl;
+  WorkspaceConnection? get activeWorkspace =>
+      _workspaceId == null || _baseUrl.isEmpty
+      ? null
+      : WorkspaceConnection(
+          origin: _baseUrl,
+          workspaceId: _workspaceId!,
+          name: '',
+        );
+
+  Future<WorkspaceConnection> loadWorkspace(WorkspaceStore store) async {
+    final saved = await store.selected();
+    if (saved != null) {
+      final verified = await inspectWorkspace(saved.origin);
+      if (verified.workspaceId != saved.workspaceId) {
+        throw const ApiException(
+          'workspace_mismatch',
+          'Ruang kerja tersimpan berbeda dari server.',
+        );
+      }
+      if (_token == null || _workspaceId != verified.workspaceId) {
+        _baseUrl = verified.origin;
+        _workspaceId = verified.workspaceId;
+        _workspaceReady = verified.ready;
+        _pending = _userId == null ? null : await _loadPending(_userId!);
+        _revision++;
+      }
+      if (!verified.ready) {
+        throw const ApiException(
+          'workspace_unclaimed',
+          'Workspace belum diklaim pemilik. Selesaikan setup token terlebih dahulu.',
+        );
+      }
+      return verified;
+    }
+    if (_initialBaseUrl.isNotEmpty) {
+      final verified = await inspectWorkspace(_initialBaseUrl);
+      if (!verified.ready) {
+        throw const ApiException(
+          'workspace_unclaimed',
+          'Workspace belum diklaim pemilik.',
+        );
+      }
+      _baseUrl = verified.origin;
+      _workspaceId = verified.workspaceId;
+      _workspaceReady = verified.ready;
+      await store.add(verified);
+      await store.select(verified);
+      _revision++;
+      return verified;
+    }
+    throw const ApiException(
+      'workspace_required',
+      'Hubungkan workspace Cloudflare terlebih dahulu.',
+    );
+  }
+
+  final String _initialBaseUrl;
+  String _baseUrl;
+  String get baseUrl => _baseUrl;
+  String? _workspaceId;
+  bool _workspaceReady = false;
+  bool get hasVerifiedWorkspace =>
+      _workspaceId != null && _workspaceReady && isConfigured;
+
+  Future<WorkspaceConnection> inspectWorkspace(String origin) =>
+      WorkspaceConnection.verifyOrigin(origin, client: _client);
+
+  Future<(AppUser, String)> claimWorkspaceOwner(
+    WorkspaceConnection workspace, {
+    required String setupToken,
+    required String name,
+    required String username,
+    required String password,
+    required String workspaceName,
+  }) async {
+    if (!workspaceName.trim().isNotEmpty ||
+        workspaceName.trim().length > 100 ||
+        setupToken.isEmpty ||
+        setupToken.length > 256) {
+      throw const ApiException(
+        'invalid_input',
+        'Lengkapi nama usaha dan token setup yang valid.',
+      );
+    }
+    final claimRequest =
+        http.Request('POST', Uri.parse('${workspace.origin}/v1/setup/owner'))
+          ..followRedirects = false
+          ..headers.addAll(const {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+          })
+          ..body = jsonEncode({
+            'setupToken': setupToken,
+            'name': name.trim(),
+            'username': username.trim(),
+            'password': password,
+            'workspaceName': workspaceName.trim(),
+          });
+    final response = await _client
+        .send(claimRequest)
+        .then(http.Response.fromStream)
+        .timeout(const Duration(seconds: 45));
+    if (response.isRedirect) {
+      throw const ApiException(
+        'workspace_redirect',
+        'Ruang kerja mengalihkan permintaan. Periksa kembali alamatnya.',
+      );
+    }
+    final result = _decode(http.Response(response.body, response.statusCode));
+    try {
+      final user = AppUser.fromJson(result['user'] as Map<String, dynamic>);
+      final token = result['token'];
+      if (user.role != 'owner' ||
+          !user.active ||
+          token is! String ||
+          !RegExp(r'^[0-9a-f]{64}$').hasMatch(token)) {
+        throw const FormatException();
+      }
+      return (user, token);
+    } on (TypeError, FormatException) {
+      throw const ApiException(
+        'invalid_response',
+        'Pendaftaran ruang kerja belum dapat dikonfirmasi.',
+        uncertain: true,
+      );
+    }
+  }
+
+  Future<void> acceptSession(
+    AppUser user,
+    String token, {
+    String? workspaceId,
+  }) async {
+    if (!isConfigured ||
+        !user.active ||
+        user.role != 'owner' && user.role != 'employee' ||
+        !RegExp(r'^[0-9a-f]{64}$').hasMatch(token)) {
+      throw const ApiException(
+        'invalid_session',
+        'Sesi workspace tidak valid.',
+      );
+    }
+    if (_workspaceId == null && workspaceId == null) {
+      throw const ApiException(
+        'workspace_required',
+        'Verifikasi workspace sebelum masuk.',
+      );
+    }
+    _workspaceId ??= workspaceId;
+    if (_workspaceId == null) {
+      throw const ApiException(
+        'workspace_required',
+        'Pilih workspace sebelum masuk.',
+      );
+    }
+    _workspaceReady = true;
+    _userId = user.id;
+    _pending = await _loadPending(user.id);
+  }
+
+  Future<void> clearWorkspace() async {
+    if (_token != null || _pending != null) {
+      throw const ApiException(
+        'workspace_switch_confirmation',
+        'Keluar dari akun sebelum menghapus workspace.',
+      );
+    }
+    _baseUrl = '';
+    _workspaceId = null;
+    _workspaceReady = false;
+    _token = null;
+    _userId = null;
+    _pending = null;
+    _revision++;
+  }
+
+  Future<void> switchWorkspace(WorkspaceConnection workspace) async {
+    final check = await inspectWorkspace(workspace.origin);
+    if (check.workspaceId != workspace.workspaceId) {
+      throw const ApiException(
+        'workspace_mismatch',
+        'Ruang kerja berbeda dengan kode pemasangan.',
+      );
+    }
+    if (_token != null || _pending != null) {
+      throw const ApiException(
+        'workspace_switch_confirmation',
+        'Keluar dari ruang kerja saat ini sebelum berpindah ke ruang kerja lain.',
+      );
+    }
+    _baseUrl = check.origin;
+    _workspaceId = check.workspaceId;
+    _workspaceReady = check.ready;
+    if (!check.ready) {
+      throw const ApiException(
+        'workspace_unclaimed',
+        'Workspace belum diklaim pemilik.',
+      );
+    }
+    _token = null;
+    _userId = null;
+    _pending = null;
+    _revision++;
+  }
+
+  Future<void> restoreWorkspace() async {
+    if (_initialBaseUrl.trim().isEmpty) return;
+    try {
+      await switchWorkspace(await inspectWorkspace(_initialBaseUrl.trim()));
+    } catch (_) {
+      _baseUrl = '';
+      _workspaceId = null;
+      _workspaceReady = false;
+      _token = null;
+      _userId = null;
+      _pending = null;
+      _revision++;
+    }
+  }
+
   final http.Client _client;
   final PendingStore _pendingStore;
   String? _token;
@@ -55,7 +276,7 @@ class ApiClient {
   }
 
   Uri _uri(String path) {
-    if (!isConfigured) {
+    if (!hasVerifiedWorkspace) {
       throw const ApiException(
         'configuration',
         'Layanan belum dikonfigurasi. Hubungi pengelola aplikasi.',
@@ -155,7 +376,7 @@ class ApiClient {
 
   Future<PendingRequest?> _loadPending(String userId) async {
     try {
-      return await _pendingStore.load(baseUrl, userId);
+      return await _pendingStore.load(baseUrl, userId, _workspaceId);
     } catch (_) {
       throw const ApiException(
         'pending_storage',
@@ -211,7 +432,7 @@ class ApiClient {
 
   Future<void> _clearPending(String userId) async {
     try {
-      await _pendingStore.clear(baseUrl, userId);
+      await _pendingStore.clear(baseUrl, userId, _workspaceId);
     } catch (_) {
       throw const ApiException(
         'pending_storage',
@@ -231,7 +452,7 @@ class ApiClient {
     _pending = await _loadPending(userId);
     if (_pending != null && !_pending!.matches(request)) _conflict();
     try {
-      await _pendingStore.save(baseUrl, userId, request);
+      await _pendingStore.save(baseUrl, userId, request, _workspaceId);
     } catch (_) {
       throw const ApiException(
         'pending_storage',
@@ -292,6 +513,12 @@ class ApiClient {
   }
 
   Future<AppUser> login(String username, String password) async {
+    if (!hasVerifiedWorkspace) {
+      throw const ApiException(
+        'configuration',
+        'Pilih workspace sebelum masuk.',
+      );
+    }
     final result = await _request(
       'POST',
       '/v1/auth/login',

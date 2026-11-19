@@ -50,8 +50,8 @@ class PendingStore {
     return result;
   }
 
-  String _scope(String baseUrl, String userId) =>
-      jsonEncode([baseUrl.replaceAll(RegExp(r'/+$'), ''), userId]);
+  String _scope(String baseUrl, String userId, [String? workspaceId]) =>
+      jsonEncode([baseUrl.replaceAll(RegExp(r'/+$'), ''), workspaceId, userId]);
 
   Future<Map<String, dynamic>> _read() async {
     if (_memory != null) return Map.of(_memory!);
@@ -74,34 +74,42 @@ class PendingStore {
     await temporary.rename(file.path);
   }
 
-  Future<PendingRequest?> load(String baseUrl, String userId) =>
-      _locked(() async {
-        final json = (await _read())[_scope(baseUrl, userId)];
-        return json == null
-            ? null
-            : PendingRequest.fromJson(json as Map<String, dynamic>);
-      });
+  Future<PendingRequest?> load(
+    String baseUrl,
+    String userId, [
+    String? workspaceId,
+  ]) => _locked(() async {
+    final json = (await _read())[_scope(baseUrl, userId, workspaceId)];
+    return json == null
+        ? null
+        : PendingRequest.fromJson(json as Map<String, dynamic>);
+  });
 
-  Future<void> save(String baseUrl, String userId, PendingRequest request) =>
-      _locked(() async {
-        final entries = await _read();
-        final scope = _scope(baseUrl, userId);
-        final previous = entries[scope];
-        if (previous != null) {
-          if (!PendingRequest.fromJson(
-            previous as Map<String, dynamic>,
-          ).matches(request)) {
-            throw StateError('A different mutation is still pending.');
-          }
-          return;
-        }
-        entries[scope] = request.toJson();
-        await _write(entries);
-      });
-
-  Future<void> clear(String baseUrl, String userId) => _locked(() async {
+  Future<void> save(
+    String baseUrl,
+    String userId,
+    PendingRequest request, [
+    String? workspaceId,
+  ]) => _locked(() async {
     final entries = await _read();
-    entries.remove(_scope(baseUrl, userId));
+    final scope = _scope(baseUrl, userId, workspaceId);
+    final previous = entries[scope];
+    if (previous != null) {
+      if (!PendingRequest.fromJson(
+        previous as Map<String, dynamic>,
+      ).matches(request)) {
+        throw StateError('A different mutation is still pending.');
+      }
+      return;
+    }
+    entries[scope] = request.toJson();
     await _write(entries);
   });
+
+  Future<void> clear(String baseUrl, String userId, [String? workspaceId]) =>
+      _locked(() async {
+        final entries = await _read();
+        entries.remove(_scope(baseUrl, userId, workspaceId));
+        await _write(entries);
+      });
 }

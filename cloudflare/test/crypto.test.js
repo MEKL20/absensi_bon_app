@@ -1,7 +1,20 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { pbkdf2Sync } from "node:crypto";
-import { derivePassword, hashPassword, verifyPassword } from "../src/crypto.js";
+import {
+  derivePassword,
+  hashPassword,
+  matchesSetupToken,
+  sha256,
+  verifyPassword,
+} from "../src/crypto.js";
+test("setup digest comparison hashes the token and rejects malformed lengths", async () => {
+  const token = "random setup token";
+  assert.equal(await matchesSetupToken(token, await sha256(token)), true);
+  assert.equal(await matchesSetupToken("different", await sha256(token)), false);
+  assert.equal(await matchesSetupToken(token, "a".repeat(63)), false);
+  assert.equal(await matchesSetupToken(undefined, await sha256(token)), false);
+});
 test("standard PBKDF2-SHA256 matches published vector and native Node 600k", async () => {
   assert.equal(
     await derivePassword("password", "73616c74", 1),

@@ -9,12 +9,10 @@ const sharedHash = await hashPassword(PASSWORD);
 class SQLiteD1 {
   constructor() {
     this.db = new DatabaseSync(":memory:");
-    this.db.exec(
-      readFileSync(
-        new URL("../migrations/0001_initial.sql", import.meta.url),
-        "utf8",
-      ),
-    );
+    for (const file of ["0001_initial.sql", "0002_workspace.sql"])
+      this.db.exec(
+        readFileSync(new URL("../migrations/" + file, import.meta.url), "utf8"),
+      );
   }
   prepare(sql) {
     const db = this.db;
@@ -143,6 +141,23 @@ function photoForm(
   form.set("photo", new Blob([bytes], { type: mime }), "untrusted-name.exe");
   return form;
 }
+test("owner setup fails closed without a valid configured SHA-256 digest", async () => {
+  const env = { DB: new SQLiteD1() };
+  for (const config of [undefined, "", "not-a-digest", "a".repeat(63) + "\n"]) {
+    env.OWNER_SETUP_TOKEN_SHA256 = config;
+    const response = await worker.fetch(
+      new Request("https://api.example/v1/setup/owner", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ setupToken: "dummy value" }),
+      }),
+      env,
+    );
+    assert.equal(response.status, 503);
+    assert.equal((await response.json()).error.code, "setup_unavailable");
+  }
+  assert.equal(env.DB.db.prepare("SELECT count(*) AS n FROM users").get().n, 0);
+});
 test("opaque sessions authenticate, expire, logout, and revoke on employee changes", async () => {
   const { env, call } = await setup();
   assert.equal((await call("GET", "/v1/auth/me", null)).status, 401);

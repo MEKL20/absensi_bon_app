@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { Miniflare } from "miniflare";
 import { readFileSync } from "node:fs";
 import { build } from "esbuild";
-import { hashPassword } from "../src/crypto.js";
+import { hashPassword, randomToken, sha256 } from "../src/crypto.js";
 test("actual Workers runtime accepts credential KDF, D1 batch guards and private R2", async () => {
   const bundle = await build({
     entryPoints: [
@@ -17,21 +17,27 @@ test("actual Workers runtime accepts credential KDF, D1 batch guards and private
     format: "esm",
     platform: "browser",
   });
+  const setupToken = randomToken(),
+    digest = await sha256(setupToken);
   const mf = new Miniflare({
     modules: true,
     script: bundle.outputFiles[0].text,
     compatibilityDate: "2026-08-06",
     d1Databases: { DB: "db" },
     r2Buckets: { PHOTOS: "photos" },
-    bindings: { BUSINESS_TIMEZONE: "Asia/Jakarta" },
+    bindings: {
+      BUSINESS_TIMEZONE: "Asia/Jakarta",
+      OWNER_SETUP_TOKEN_SHA256: digest.toUpperCase(),
+    },
     modulesRules: [{ type: "ESModule", include: ["**/*.js"] }],
   });
   try {
     const db = await mf.getD1Database("DB");
-    const sql = readFileSync(
-      new URL("../migrations/0001_initial.sql", import.meta.url),
-      "utf8",
-    );
+    const sql = ["0001_initial.sql", "0002_workspace.sql"]
+      .map((file) =>
+        readFileSync(new URL("../migrations/" + file, import.meta.url), "utf8"),
+      )
+      .join("\n");
     // D1 exec is line-oriented; statements include a trigger so use the SQLite migration as one script through prepare.
     const statements = sql.split(/;\s*\n/);
     let trigger = "";
@@ -53,16 +59,121 @@ test("actual Workers runtime accepts credential KDF, D1 batch guards and private
       await db.prepare(chunk).run();
     }
     const hash = await hashPassword("workerd password for test");
-    for (const [id, role] of [
-      ["owner", "owner"],
-      ["alice", "employee"],
-    ])
-      await db
-        .prepare(
-          "INSERT INTO users(id,name,username,password_hash,role,created_at) VALUES(?,?,?,?,?,?)",
-        )
-        .bind(id, id, id, hash, role, new Date().toISOString())
-        .run();
+    await db
+      .prepare(
+        "INSERT INTO users(id,name,username,password_hash,role,created_at) VALUES('alice','alice','alice',?,'employee',?)",
+      )
+      .bind(hash, new Date().toISOString())
+      .run();
+    const workspace = async () => {
+      const response = await mf.dispatchFetch("https://example/v1/workspace");
+      assert.equal(response.status, 200);
+      assert.equal(response.headers.get("cache-control"), "no-store");
+      return response.json();
+    };
+    const before = await workspace();
+    assert.match(before.id, /^[0-9a-f]{32}$/);
+    assert.deepEqual(before, {
+      id: before.id,
+      name: "Absensi & Bon",
+      ready: false,
+    });
+    const claim = async (
+      token,
+      username = "OWNER",
+      workspaceName = "Test Workspace",
+    ) => {
+      const response = await mf.dispatchFetch(
+        "https://example/v1/setup/owner",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            setupToken: token,
+            name: "Claimed Owner",
+            username,
+            password: "workerd password for test",
+            workspaceName,
+          }),
+        },
+      );
+      const text = await response.text();
+      assert.equal(
+        text.includes(setupToken) || text.toLowerCase().includes(digest),
+        false,
+      );
+      return { status: response.status, data: JSON.parse(text) };
+    };
+    for (const bad of [
+      undefined,
+      "",
+      42,
+      digest,
+      setupToken + " ",
+      randomToken(),
+    ]) {
+      const response = await claim(bad);
+      assert.equal(response.status, 401);
+      assert.equal(response.data.error.code, "invalid_setup_token");
+    }
+    assert.equal(
+      (await claim(setupToken, "alice")).data.error.code,
+      "username_taken",
+    );
+    assert.deepEqual(await workspace(), before);
+    assert.equal(
+      (await db.prepare("SELECT count(*) AS n FROM sessions").first()).n,
+      0,
+    );
+
+    const claims = await Promise.all([
+      claim(setupToken, "OWNER", "First Workspace"),
+      claim(setupToken, "SECOND", "Second Workspace"),
+    ]);
+    assert.deepEqual(claims.map(({ status }) => status).sort(), [201, 409]);
+    const winner = claims.find(({ status }) => status === 201).data;
+    assert.equal(
+      claims.find(({ status }) => status === 409).data.error.code,
+      "workspace_claimed",
+    );
+    assert.deepEqual(winner.user, {
+      id: winner.user.id,
+      name: "Claimed Owner",
+      username: winner.user.username,
+      role: "owner",
+      active: true,
+    });
+    assert.match(winner.token, /^[0-9a-f]{64}$/);
+    assert.deepEqual(await workspace(), {
+      id: before.id,
+      name:
+        winner.user.username === "owner"
+          ? "First Workspace"
+          : "Second Workspace",
+      ready: true,
+    });
+    assert.equal(
+      (await claim(setupToken)).data.error.code,
+      "workspace_claimed",
+    );
+    assert.equal(
+      (
+        await db
+          .prepare("SELECT count(*) AS n FROM users WHERE role='owner'")
+          .first()
+      ).n,
+      1,
+    );
+    const session = await db
+      .prepare("SELECT token_hash,user_id FROM sessions")
+      .all();
+    assert.deepEqual(session.results, [
+      { token_hash: await sha256(winner.token), user_id: winner.user.id },
+    ]);
+    const me = await mf.dispatchFetch("https://example/v1/auth/me", {
+      headers: { authorization: "Bearer " + winner.token },
+    });
+    assert.deepEqual(await me.json(), { ok: true, user: winner.user });
     const login = async (username) => {
       const response = await mf.dispatchFetch("https://example/v1/auth/login", {
         method: "POST",
@@ -75,7 +186,7 @@ test("actual Workers runtime accepts credential KDF, D1 batch guards and private
       assert.equal(response.status, 200);
       return (await response.json()).token;
     };
-    const owner = await login("owner"),
+    const owner = await login(winner.user.username),
       alice = await login("alice");
     const request = async (path, token, body, key) => {
       const response = await mf.dispatchFetch("https://example" + path, {
